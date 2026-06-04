@@ -1,7 +1,7 @@
 #!/bin/bash
-# Helper to sync p6v2 total tx data from the main trading Data/ dir into this repo and commit.
+# Helper to sync p6v2 total tx data from the main trading Data/ dir into this repo and commit/push.
 # Run this after your autotrade has written the latest to Data/p6v2_total_transactions.*
-# After running, do the push manually once you have git auth set up.
+# For automation from R script, make sure git push works non-interactively (ssh key or cached credential).
 
 set -e
 
@@ -25,11 +25,21 @@ fi
 MSG="Update total transactions $(date '+%Y-%m-%d %H:%M:%S')"
 git commit -m "$MSG"
 
-echo ""
-echo "Local commit created successfully."
-echo "To publish, run: git push origin main"
-echo "(You may need to set up credentials first time -- see README.md in this repo for PAT or SSH instructions.)"
-echo ""
-echo "After push, the live data will be at:"
+echo "Commit created. Attempting push..."
+set +e
+git push origin main
+PUSH_EXIT=$?
+set -e
+
+if [ $PUSH_EXIT -ne 0 ]; then
+  echo "WARNING: git push failed (exit $PUSH_EXIT)."
+  echo "You may need to set up non-interactive auth once:"
+  echo "  git remote set-url origin https://jvhoang:YOUR_GITHUB_PAT@github.com/jvhoang/p6v2-public-stats.git"
+  echo "  or use ssh key: git remote set-url origin git@github.com:jvhoang/p6v2-public-stats.git"
+  echo "After setup, re-run this script or 'git push origin main'"
+  # Do not exit 1, so R script doesn't see error if push fails but commit succeeded
+fi
+
+echo "Done. Raw URLs:"
 echo "  https://raw.githubusercontent.com/jvhoang/p6v2-public-stats/main/data/p6v2_total_transactions.txt"
 echo "  https://raw.githubusercontent.com/jvhoang/p6v2-public-stats/main/data/p6v2_total_transactions.json"
