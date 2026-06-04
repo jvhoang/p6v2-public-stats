@@ -50,23 +50,18 @@ chmod +x update-data.sh
 ./update-data.sh
 ```
 
-The helper copies the files, commits with timestamp, and pushes.
+The helper copies the files, commits with timestamp, and pushes (with warning if auth not set).
 
 ### From within this Grok environment (direct API, no local clone or auth needed here)
 
-Just tell me the new value (or I can read the local Data/ file) and I'll use the integrated tools to commit directly to the repo (as done for the initial 4626 value).
+Just tell me the new value (or I can read the local Data/ file) and I'll use the integrated tools to commit directly to the repo.
 
-## Automation ideas
+## Automation in P6v2_autotrade.R
 
-Add to your P6v2_autotrade.R inside the if-block (after computing total_transactions and writing the local Data/ files):
+The code to write the files and call the helper has been added inside the every-10min if-block in P6v2_autotrade.R (the one that also computes total_transactions = nrow(...) + num_rejected).
 
-```r
-# optional auto update of public repo
-if (file.exists("~/p6v2-public-stats/update-data.sh")) {
-  system("cd ~/p6v2-public-stats && ./update-data.sh", ignore.stdout = FALSE, ignore.stderr = FALSE)
-}
-```
+It will auto-update the public data ~every 10 minutes during trading (when the doublecheck runs).
 
-(Requires that you have authenticated git push working non-interactively, e.g. via ssh key + agent.)
+See update-data.sh and the R script for the exact logic.
 
-See the update-data.sh for details.
+(Requires git push auth set up non-interactively in the clone, e.g. ssh key.)
