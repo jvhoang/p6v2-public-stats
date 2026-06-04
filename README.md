@@ -70,28 +70,27 @@ Recommended improved embed code (add polling + cache buster):
 
 ### Recommended: Local git clone (run on your Mac)
 
-A clone has already been set up for you at `/Users/johnhoang/p6v2-public-stats` (outside OneDrive to keep git clean).
+Clone the repo to a convenient location on your machine (e.g. outside synced folders like OneDrive for clean git):
 
 ```bash
-# If you need to re-clone:
-# git clone https://github.com/jvhoang/p6v2-public-stats.git ~/p6v2-public-stats
+git clone https://github.com/jvhoang/p6v2-public-stats.git ~/p6v2-public-stats
 
 cd ~/p6v2-public-stats
 
 # Make the helper executable (if needed)
 chmod +x update-data.sh
 
-# BEST for R script automation: use PAT file (no prompts, token not in gitconfig)
-# 1. Generate PAT: https://github.com/settings/tokens (classic, scope=repo)
+# For R script automation: use a PAT file (no prompts, token not in gitconfig)
+# 1. Generate PAT at https://github.com/settings/tokens (classic, scope=repo)
 # 2. echo 'ghp_yourtoken' > ~/.p6v2_github_pat
 # 3. chmod 600 ~/.p6v2_github_pat
 # The helper will use it only for push then restore the plain remote URL.
 
-# To update data from terminal or script: after R has written to Data/ folder, just run:
+# To update data: after your R script (or other process) has written the stats files into the clone's data/ folder, just run:
 ./update-data.sh
 ```
 
-The helper now supports the PAT file for fully non-interactive use from your R autotrade script.
+The helper supports optional SOURCE_DIR as first argument for copy (keep your personal paths in your private calling script only). It also supports the PAT file for fully non-interactive use.
 
 ### From within this Grok environment
 
@@ -99,10 +98,10 @@ Just tell me the new value and I'll push directly.
 
 ## Automation in P6v2_autotrade.R
 
-The integration code (write files + call helper) is already inside the if-block in your P6v2_autotrade.R .
+The integration code (write files to your local Data/ + to the public clone's data/ + call helper) can be added inside the relevant if-blocks in your P6v2_autotrade.R .
 
 It triggers on the same schedule as the doublecheck.
 
-See the .PAT_SETUP_INSTRUCTIONS.txt in the clone for details, and ~/p6v2_update.log for output from runs.
+See ~/p6v2_update.log for output from runs.
 
 (After setting up the PAT file, the R system() call will update GitHub without any prompts.)
