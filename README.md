@@ -37,31 +37,28 @@ cd ~/p6v2-public-stats
 # Make the helper executable (if needed)
 chmod +x update-data.sh
 
-# IMPORTANT: Set up authentication for push (one time)
-# Option 1: Personal Access Token (PAT)
-#   - GitHub Settings > Developer settings > Personal access tokens > Tokens (classic) > Generate new with 'repo' scope
-#   - Then: git remote set-url origin https://jvhoang:YOUR_TOKEN@github.com/jvhoang/p6v2-public-stats.git
-#   - Or use git credential helper: git config --global credential.helper osxkeychain (then it will prompt once)
-#
-# Option 2: SSH (recommended if you have keys)
-#   - Add your public key to GitHub, then: git remote set-url origin git@github.com:jvhoang/p6v2-public-stats.git
+# BEST for R script automation: use PAT file (no prompts, token not in gitconfig)
+# 1. Generate PAT: https://github.com/settings/tokens (classic, scope=repo)
+# 2. echo 'ghp_yourtoken' > ~/.p6v2_github_pat
+# 3. chmod 600 ~/.p6v2_github_pat
+# The helper will use it only for push then restore the plain remote URL.
 
-# To update data: after your R script has written the latest values to the main Data/ folder, just run:
+# To update data from terminal or script: after R has written to Data/ folder, just run:
 ./update-data.sh
 ```
 
-The helper copies the files, commits with timestamp, and pushes (with warning if auth not set).
+The helper now supports the PAT file for fully non-interactive use from your R autotrade script.
 
-### From within this Grok environment (direct API, no local clone or auth needed here)
+### From within this Grok environment
 
-Just tell me the new value (or I can read the local Data/ file) and I'll use the integrated tools to commit directly to the repo.
+Just tell me the new value and I'll push directly.
 
 ## Automation in P6v2_autotrade.R
 
-The code to write the files and call the helper has been added inside the every-10min if-block in P6v2_autotrade.R (the one that also computes total_transactions = nrow(...) + num_rejected).
+The integration code (write files + call helper) is already inside the if-block in your P6v2_autotrade.R .
 
-It will auto-update the public data ~every 10 minutes during trading (when the doublecheck runs).
+It triggers on the same schedule as the doublecheck.
 
-See update-data.sh and the R script for the exact logic.
+See the .PAT_SETUP_INSTRUCTIONS.txt in the clone for details, and ~/p6v2_update.log for output from runs.
 
-(Requires git push auth set up non-interactively in the clone, e.g. ssh key.)
+(After setting up the PAT file, the R system() call will update GitHub without any prompts.)
