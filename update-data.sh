@@ -8,29 +8,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA_DIR="${SCRIPT_DIR}/data"
 
-POSSIBLE_SOURCES=(
-  "/Users/johnhoang/Library/CloudStorage/OneDrive-Personal/FW/TDA/Schwab/Data"
-  "/Users/johnhoang/OneDrive/FW/TDA/Schwab/Data"
-  "//JKVH7/Users/jhoang/OneDrive/FW/TDA/Schwab/Data"
-  "//JKVH1/Users/jhoang/OneDrive/FW/TDA/Schwab/Data"
-)
-
-SOURCE_DIR=""
-for s in "${POSSIBLE_SOURCES[@]}"; do
-  if [ -f "$s/p6v2_total_transactions.txt" ]; then
-    SOURCE_DIR="$s"
-    break
+# Optional first argument: SOURCE_DIR to copy from (e.g. your private Data/ dir)
+# If not provided, assumes the files are already in data/ (e.g. written directly by your R script)
+if [ $# -ge 1 ]; then
+  SOURCE_DIR="$1"
+  if [ -z "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/p6v2_total_transactions.txt" ]; then
+    echo "Invalid or missing SOURCE_DIR with p6v2_total_transactions.*"
+    exit 1
   fi
-done
-
-if [ -z "$SOURCE_DIR" ]; then
-  echo "No source Data/ with p6v2_total_transactions.* found."
-  exit 1
+  echo "Copying from ${SOURCE_DIR} ..."
+  cp -f "${SOURCE_DIR}/p6v2_total_transactions.txt" "${DATA_DIR}/" || { echo "txt not found"; exit 1; }
+  cp -f "${SOURCE_DIR}/p6v2_total_transactions.json" "${DATA_DIR}/" || { echo "json not found"; exit 1; }
 fi
-
-echo "Copying from ${SOURCE_DIR} ..."
-cp -f "${SOURCE_DIR}/p6v2_total_transactions.txt" "${DATA_DIR}/" || { echo "txt not found"; exit 1; }
-cp -f "${SOURCE_DIR}/p6v2_total_transactions.json" "${DATA_DIR}/" || { echo "json not found"; exit 1; }
 
 cd "${SCRIPT_DIR}"
 git add data/p6v2_total_transactions.*
