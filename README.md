@@ -81,18 +81,47 @@ function formatLastUpdated(str) {
 async function updateStatus() {
   refreshCount++;
 
-  const dataUrl = `https://cdn.jsdelivr.net/gh/jvhoang/p6v2-public-stats@main/data/p6v2_total_transactions.json`;
   const now = Date.now();
   const perf = performance.now();
-  const rand1 = Math.random();
-  const rand2 = Math.random();
-  const bust = `${now}${perf}${rand1}${rand2}`;
-  const url = `${dataUrl}?bust=${bust}&t=${now}&r=${rand1}&cb=${Math.random().toString(36).slice(2)}`;
+  const randBase = Math.random().toString(36).slice(2);
 
-  console.log(`Fetching fresh status (poll #${refreshCount}): ${url}`);
+  // 1. Fetch the version pointer (tiny file updated on every push) with strong bust.
+  // This forces jsDelivr to resolve the absolute latest @main commit.
+  const vBust = `${now}${perf}${randBase}`;
+  const versionUrl = `https://cdn.jsdelivr.net/gh/jvhoang/p6v2-public-stats@main/data/p6v2_version.txt?bust=${vBust}&t=${now}&r=${Math.random()}`;
+
+  let sha = 'main';
+  try {
+    const vRes = await fetch(versionUrl, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    if (vRes.ok) {
+      const vText = (await vRes.text()).trim();
+      const parts = vText.split(/\s+/);
+      if (parts[0] && parts[0].length >= 10) {
+        sha = parts[0]; // the exact commit SHA containing the fresh data
+      }
+    }
+  } catch (e) {
+    // fallback to @main if version pointer can't be read
+    console.warn('Could not read version pointer, falling back to @main', e);
+  }
+
+  // 2. Fetch the actual JSON pinned to that SHA + fresh bust.
+  // Pinning to the SHA from the version pointer guarantees we get the content
+  // from the exact commit that has the latest data (bypasses any sticky @main cache).
+  const dBust = `${now}${perf}${Math.random()}${Math.random()}`;
+  const dataUrl = `https://cdn.jsdelivr.net/gh/jvhoang/p6v2-public-stats@${sha}/data/p6v2_total_transactions.json?bust=${dBust}&t=${now}&r=${Math.random()}`;
+
+  console.log(`Fetching fresh status (poll #${refreshCount}) via @${sha}: ${dataUrl}`);
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(dataUrl, {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
@@ -125,13 +154,13 @@ async function updateStatus() {
     if (dt) {
       diffSec = Math.floor((Date.now() - dt.getTime()) / 1000);
       if (diffSec < 80) {
-        lastCell.style.backgroundColor = 'rgba(144, 238, 144, 0.5)'; // light green 50% opaque
+        lastCell.style.backgroundColor = 'rgba(144, 238, 144, 0.5)';
         lastCell.style.color = '#000';
       } else if (diffSec < 180) {
-        lastCell.style.backgroundColor = 'rgba(255, 250, 205, 0.5)'; // light yellow 50% opaque
+        lastCell.style.backgroundColor = 'rgba(255, 250, 205, 0.5)';
         lastCell.style.color = '#000';
       } else {
-        lastCell.style.backgroundColor = 'rgba(255, 182, 193, 0.5)'; // light red 50% opaque
+        lastCell.style.backgroundColor = 'rgba(255, 182, 193, 0.5)';
         lastCell.style.color = '#000';
       }
     } else {
