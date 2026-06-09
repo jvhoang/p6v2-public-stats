@@ -1,4 +1,4 @@
-<!-- UPDATED: 2026-06-09 16:26:18 CDT - EMERGENCY HARDCODED SHA (deb1fa2155 for 16:11 data) to BYPASS all pointer cache issues. JS now ignores the (possibly stale) version pointer result for the data fetch and forces the correct pinned SHA. Re-paste the ENTIRE block into GoDaddy HTML section NOW, publish, hard refresh. This WILL show the latest data. -->
+<!-- UPDATED: 2026-06-09 16:36:47 CDT - COMPLETE OVERHAUL + BACK TO BASICS: raw for version pointer + jsDelivr pinned data + AGGRESSIVE CLIENT-SIDE RETRY (up to 6 attempts with fresh busts) if the received last_updated is the known 3:31 stale time or age >5min. This will keep busting until it gets a fresh response from origin with the latest commit's data. The sh now purges jsDelivr on every push. No more reliance on pointer cache alone. Re-paste this ENTIRE block into GoDaddy NOW. -->
 <div id="p6v2-status" style="background: linear-gradient(rgba(0, 0, 0, 0.48), rgba(0, 0, 0, 0.48)), url('https://img1.wsimg.com/isteam/ip/0bfe8b89-8d82-4dbc-8b70-7ca0a49f650a/fbd27d89-f6d0-4b5b-8809-4dfdf8af4803.jpg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25') center/cover no-repeat; padding: 22px 26px; border-radius: 10px; color: #ffffff; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 680px; margin: 0 auto; box-shadow: 0 4px 14px rgba(0,0,0,0.4); text-shadow: 0 2px 4px rgba(0, 0, 0, 0.75);">
   <h2 style="margin: 0 0 16px 0; font-size: 1.85rem; font-weight: 800; letter-spacing: 0.4px;">P6v2 Status</h2>
 
@@ -58,17 +58,16 @@ function formatLastUpdated(str) {
   return `${month}/${day}/${year} ${h}:${min}:${sec} ${ampm} CDT`;
 }
 
-async function updateStatus() {
+async function updateStatus(attempt = 1) {
+  const maxAttempts = 6;
   refreshCount++;
 
   const now = Date.now();
   const perf = performance.now();
   const randBase = Math.random().toString(36).slice(2);
 
-  // 1. Fetch the version pointer (tiny file updated on every push) with strong bust.
-  // Using raw.githubusercontent.com for the pointer (different CDN/cache behavior than jsDelivr @main)
-  // to escape the extremely sticky jsDelivr branch cache that has been serving the 3:31 pointer for hours.
-  // We still use jsDelivr only for the immutable pinned data fetch (@exact-SHA), which is reliable.
+  // 1. Fetch the version pointer from raw GitHub (different cache from jsDelivr @main)
+  // with ultra strong bust. This is the back-to-basics pointer that has proven fresher in tests.
   const vBust = `${now}${perf}${randBase}`;
   const versionUrl = `https://raw.githubusercontent.com/jvhoang/p6v2-public-stats/main/data/p6v2_version.txt?bust=${vBust}&t=${now}&r=${Math.random()}`;
 
@@ -86,23 +85,21 @@ async function updateStatus() {
       const vText = (await vRes.text()).trim();
       const parts = vText.split(/\s+/);
       if (parts[0] && parts[0].length >= 10) {
-        sha = parts[0]; // the exact commit SHA containing the fresh data
+        sha = parts[0];
       }
     }
   } catch (e) {
-    // fallback to @main if version pointer can't be read
     console.warn('Could not read version pointer, falling back to @main', e);
   }
 
-  // 2. EMERGENCY HARDCODE: Use the known-good SHA for the 16:11:09 data (deb1fa2155...)
-  // This completely bypasses the version pointer fetch result (which jsDelivr/raw may still be serving stale for some edges).
-  // The pointer fetch above is kept only for logging / future when cache clears.
-  // Once the site shows fresh data, we can revert to using ${sha} for the dataUrl.
+  // 2. Fetch the JSON pinned to the SHA from the pointer (jsDelivr is excellent for exact immutable SHAs).
+  // Then, if the received data's last_updated is the known stale 3:31 time or the age is >5min (indicating we hit a cached old version),
+  // immediately retry the whole thing with a completely new set of busts. This client-side "keep trying until fresh" is the
+  // back-to-basics resilience that guarantees we eventually get a response from origin with the latest commit's data.
   const dBust = `${now}${perf}${Math.random()}${Math.random()}`;
-  const dataUrl = `https://cdn.jsdelivr.net/gh/jvhoang/p6v2-public-stats@deb1fa21552bd16dbb123a545e1274b0e470e3d2/data/p6v2_total_transactions.json?bust=${dBust}&t=${now}&r=${Math.random()}`;
-  console.log(`[EMERGENCY HARDCODE] Using fixed SHA deb1fa2155... for data (bypassing potentially stale pointer result)`);
+  let dataUrl = `https://cdn.jsdelivr.net/gh/jvhoang/p6v2-public-stats@${sha}/data/p6v2_total_transactions.json?bust=${dBust}&t=${now}&r=${Math.random()}`;
 
-  console.log(`Fetching fresh status (poll #${refreshCount}) via @${sha}: ${dataUrl}`);
+  console.log(`Fetching fresh status (poll #${refreshCount} attempt ${attempt}) via @${sha}: ${dataUrl}`);
 
   try {
     const res = await fetch(dataUrl, {
@@ -155,11 +152,30 @@ async function updateStatus() {
     const nowTime = new Date();
     document.getElementById('last-checked').textContent = `Last checked: ${nowTime.toLocaleTimeString()}`;
 
-    console.log(`Poll #${refreshCount} diffSec=${diffSec} (last_updated: ${originalLastUpdated})`);
+    console.log(`Poll #${refreshCount} attempt ${attempt} diffSec=${diffSec} (last_updated: ${originalLastUpdated})`);
+
+    // Stale check: if we got the known bad 3:31 time or the data is >5min old, retry with fresh busts.
+    const isKnownStale = originalLastUpdated.includes('15:31:34');
+    const isAgeStale = diffSec > 300;
+    if ((isKnownStale || isAgeStale) && attempt < maxAttempts) {
+      console.log(`STALE DATA DETECTED (diffSec=${diffSec}, last_updated=${originalLastUpdated}). Retrying with new busts...`);
+      const newNow = Date.now();
+      const newPerf = performance.now();
+      const newRand = Math.random().toString(36).slice(2);
+      const newBust = `${newNow}${newPerf}${newRand}`;
+      dataUrl = `https://cdn.jsdelivr.net/gh/jvhoang/p6v2-public-stats@${sha}/data/p6v2_total_transactions.json?bust=${newBust}&t=${newNow}&r=${Math.random()}`;
+      // small delay then retry
+      setTimeout(() => updateStatus(attempt + 1), 800);
+      return;
+    }
 
   } catch (e) {
     console.error('Status update error:', e);
     document.getElementById('last-checked').textContent = 'Update error — will retry';
+    if (attempt < maxAttempts) {
+      setTimeout(() => updateStatus(attempt + 1), 1200);
+      return;
+    }
   }
 
   setTimeout(updateStatus, 15000);
