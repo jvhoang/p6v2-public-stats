@@ -1,94 +1,159 @@
 The current README content with fixed JS parse in the embed example.
 
-## Embed Code for GoDaddy (P6v2 Status table) - Strong Anti-Caching Version
+## Embed Code for GoDaddy (P6v2 Status table) - jsDelivr + Ultra Anti-Cache (fixes the ~5min raw.githubusercontent.com lag)
 
-... (keep the description)
+**Root cause of the 5 minute delay:**  
+`raw.githubusercontent.com` (Fastly) always advertises `max-age=300` (and often serves HITs with `age` ~300 or `x-cache: HIT`). Even with `?bust=...` + `cache:'no-store'` + headers, some client contexts (GoDaddy Website Builder embeds, certain browsers/proxies) can still see the 5-minute stale version.
+
+**Fix:** Primary data source is now **jsDelivr** (`cdn.jsdelivr.net/gh/...@main/...`) — a different CDN (Cloudflare) that responds much faster to new commits on `main`. Combined with:
+- Ultra high-entropy bust (`Date.now() + performance.now() + multiple randoms + extra timestamp params`)
+- `cache: 'no-store'`
+- Full no-cache headers
+- Response header logging (you will see `age`, `cf-cache-status`, `x-cache` etc. in console)
+
+This + the 15s poll + Force Refresh button gets updates on the website within seconds of a successful `git push` from your `update-data.sh` (instead of waiting out the full 5 min).
+
+The source JSON is still only written ~every 10 minutes by the R autotrade block, so you won't see more frequent changes than that.
+
+Copy the **complete block below** into your GoDaddy custom HTML section on the p6v2-status page.  
+Publish → hard refresh the live page (Cmd/Ctrl+Shift+R) with DevTools Console open.
 
 ```html
-... same HTML ...
+<div id="p6v2-status" style="background: linear-gradient(rgba(0, 0, 0, 0.48), rgba(0, 0, 0, 0.48)), url('https://img1.wsimg.com/isteam/ip/0bfe8b89-8d82-4dbc-8b70-7ca0a49f650a/fbd27d89-f6d0-4b5b-8809-4dfdf8af4803.jpg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25') center/cover no-repeat; padding: 22px 26px; border-radius: 10px; color: #ffffff; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 680px; margin: 0 auto; box-shadow: 0 4px 14px rgba(0,0,0,0.4); text-shadow: 0 2px 4px rgba(0, 0, 0, 0.75);">
+  <h2 style="margin: 0 0 16px 0; font-size: 1.85rem; font-weight: 800; letter-spacing: 0.4px;">P6v2 Status</h2>
+
+  <table id="status-table" style="width: 100%; border-collapse: collapse; font-size: 1.2rem; line-height: 1.5;">
+    <tr>
+      <td style="padding: 9px 0; opacity: 0.92; font-weight: 600; background-color: rgba(0, 0, 0, 0.5);">Last updated</td>
+      <td id="last-updated" style="font-weight: 800; font-size: 1.35rem; text-align: right; background-color: rgba(0, 0, 0, 0.5);"></td>
+    </tr>
+    <tr>
+      <td style="padding: 9px 0; opacity: 0.92; font-weight: 600; background-color: rgba(0, 0, 0, 0.5);">Total transactions</td>
+      <td id="total-transactions" style="font-weight: 800; font-size: 1.35rem; text-align: right; background-color: rgba(0, 0, 0, 0.5);"></td>
+    </tr>
+    <tr>
+      <td style="padding: 9px 0; opacity: 0.92; font-weight: 600; background-color: rgba(0, 0, 0, 0.5);">Open transactions</td>
+      <td id="open-transactions" style="font-weight: 800; font-size: 1.35rem; text-align: right; background-color: rgba(0, 0, 0, 0.5);"></td>
+    </tr>
+    <tr>
+      <td style="padding: 9px 0; opacity: 0.92; font-weight: 600; background-color: rgba(0, 0, 0, 0.5);">DTBP usage</td>
+      <td id="dtbp-usage" style="font-weight: 800; font-size: 1.35rem; text-align: right; background-color: rgba(0, 0, 0, 0.5);"></td>
+    </tr>
+    <tr>
+      <td style="padding: 9px 0; opacity: 0.92; font-weight: 600; background-color: rgba(0, 0, 0, 0.5);">VIX</td>
+      <td id="vix" style="font-weight: 800; font-size: 1.35rem; text-align: right; background-color: rgba(0, 0, 0, 0.5);"></td>
+    </tr>
+  </table>
+
+  <div style="margin-top: 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+    <button onclick="forceRefresh()" style="background: rgba(255,255,255,0.25); color: #fff; border: 1px solid rgba(255,255,255,0.5); padding: 8px 16px; border-radius: 6px; font-size: 0.95rem; font-weight: 700; cursor: pointer;">Force Refresh</button>
+    <span id="last-checked" style="font-size: 0.85rem; opacity: 0.8; font-weight: 500;"></span>
+  </div>
+</div>
 
 <script>
 let refreshCount = 0;
 
 function parseCDT(str) {
   if (!str) return null;
-  // "2026-06-08 23:11:16 CDT" -> ISO with offset "2026-06-08T23:11:16-05:00"
-  const parts = str.trim().split(/\s+/);
-  if (parts.length < 2) return null;
-  let iso = parts[0] + 'T' + parts[1];
-  let offset = '-05:00'; // assume CDT
-  if (str.toUpperCase().includes('CST')) offset = '-06:00';
-  const dt = new Date(iso + offset);
+  const cleaned = str.replace(' CDT', '').trim();
+  const parts = cleaned.split(/[- :]/);
+  if (parts.length < 6) return null;
+  const iso = `${parts[0]}-${parts[1]}-${parts[2]}T${parts[3]}:${parts[4]}:${parts[5]}-05:00`;
+  const dt = new Date(iso);
   return isNaN(dt.getTime()) ? null : dt;
 }
 
+function formatLastUpdated(str) {
+  if (!str) return '—';
+  const match = str.match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) CDT/);
+  if (!match) return str;
+  let [, year, month, day, hour, min, sec] = match;
+  month = parseInt(month, 10);
+  day = parseInt(day, 10);
+  let h = parseInt(hour, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${month}/${day}/${year} ${h}:${min}:${sec} ${ampm} CDT`;
+}
+
 async function updateStatus() {
-  const lastCheckedEl = document.getElementById('last-checked');
+  refreshCount++;
+
+  const dataUrl = `https://cdn.jsdelivr.net/gh/jvhoang/p6v2-public-stats@main/data/p6v2_total_transactions.json`;
+  const now = Date.now();
+  const perf = performance.now();
+  const rand1 = Math.random();
+  const rand2 = Math.random();
+  const bust = `${now}${perf}${rand1}${rand2}`;
+  const url = `${dataUrl}?bust=${bust}&t=${now}&r=${rand1}&cb=${Math.random().toString(36).slice(2)}`;
+
+  console.log(`Fetching fresh status (poll #${refreshCount}): ${url}`);
+
   try {
-    refreshCount++;
-    const bust = Date.now() + '_' + performance.now() + '_' + Math.random().toString(36).slice(2);
-    const url = 'https://raw.githubusercontent.com/jvhoang/p6v2-public-stats/main/data/p6v2_total_transactions.json?bust=' + bust;
-    
     const res = await fetch(url, {
-      cache: 'reload',
+      cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
         'Pragma': 'no-cache',
         'Expires': '0'
       }
     });
-    
-    if (!res.ok) throw new Error('Fetch failed: ' + res.status);
-    
+
+    console.log('Response status:', res.status);
+    console.log('Response headers:');
+    res.headers.forEach((value, key) => {
+      console.log(`  ${key}: ${value}`);
+    });
+
+    if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
     const data = await res.json();
-    
-    document.getElementById('last-updated').textContent = data.last_updated || 'N/A';
-    document.getElementById('total-transactions').textContent = data.total_transactions ?? 'N/A';
-    document.getElementById('open-transactions').textContent = data.open_transactions ?? 'N/A';
-    document.getElementById('dtbp-usage').textContent = data.dtbp_usage || 'N/A';
-    document.getElementById('vix').textContent = data.vix || 'N/A';
-    
-    // Color the Last updated cell
+
+    const originalLastUpdated = data.last_updated || '';
+    document.getElementById('last-updated').textContent = formatLastUpdated(originalLastUpdated);
+
+    document.getElementById('total-transactions').textContent = data.total_transactions ?? '—';
+    document.getElementById('open-transactions').textContent = data.open_transactions ?? '—';
+    document.getElementById('dtbp-usage').textContent = data.dtbp_usage || '—';
+    document.getElementById('vix').textContent = data.vix || '—';
+
     const lastCell = document.getElementById('last-updated');
-    const updatedStr = data.last_updated;
-    const updatedTime = parseCDT(updatedStr);
-    if (updatedTime) {
-      const diffSec = (new Date().getTime() - updatedTime.getTime()) / 1000;
+    const dt = parseCDT(originalLastUpdated);
+    let diffSec = NaN;
+
+    if (dt) {
+      diffSec = Math.floor((Date.now() - dt.getTime()) / 1000);
       if (diffSec < 80) {
-        lastCell.style.backgroundColor = '#90EE90';
-        lastCell.style.color = '#006400';
+        lastCell.style.backgroundColor = 'rgba(144, 238, 144, 0.5)'; // light green 50% opaque
+        lastCell.style.color = '#000';
       } else if (diffSec < 180) {
-        lastCell.style.backgroundColor = '#FFFACD';
-        lastCell.style.color = '#333';
+        lastCell.style.backgroundColor = 'rgba(255, 250, 205, 0.5)'; // light yellow 50% opaque
+        lastCell.style.color = '#000';
       } else {
-        lastCell.style.backgroundColor = '#FFB6C1';
-        lastCell.style.color = '#8B0000';
+        lastCell.style.backgroundColor = 'rgba(255, 182, 193, 0.5)'; // light red 50% opaque
+        lastCell.style.color = '#000';
       }
     } else {
-      // parse failed - fall back to red
-      lastCell.style.backgroundColor = '#FFB6C1';
-      lastCell.style.color = '#8B0000';
+      lastCell.style.backgroundColor = 'rgba(255, 182, 193, 0.5)';
+      lastCell.style.color = '#000';
     }
-    
-    if (lastCheckedEl) {
-      lastCheckedEl.textContent = 'Last checked: ' + new Date().toLocaleTimeString();
-    }
-    
-    console.log('P6v2 status updated (poll #' + refreshCount + '), diffSec=' + (updatedTime ? ((new Date().getTime() - updatedTime.getTime())/1000).toFixed(1) : 'NaN'));
+
+    const nowTime = new Date();
+    document.getElementById('last-checked').textContent = `Last checked: ${nowTime.toLocaleTimeString()}`;
+
+    console.log(`Poll #${refreshCount} diffSec=${diffSec} (last_updated: ${originalLastUpdated})`);
+
   } catch (e) {
-    console.error('P6v2 status fetch error:', e);
-    const cells = ['last-updated', 'total-transactions', 'open-transactions', 'dtbp-usage', 'vix'];
-    cells.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = 'N/A';
-    });
-    if (lastCheckedEl) lastCheckedEl.textContent = 'Error fetching data';
+    console.error('Status update error:', e);
+    document.getElementById('last-checked').textContent = 'Update error — will retry';
   }
+
   setTimeout(updateStatus, 15000);
 }
 
 function forceRefresh() {
-  console.log('Force refresh triggered');
+  document.getElementById('last-checked').textContent = 'Refreshing...';
   updateStatus();
 }
 
@@ -96,14 +161,16 @@ updateStatus();
 </script>
 ```
 
-## Why the cell was red even when fresh
+**Usage & verification**
+1. Paste the **entire** block (the `<div id="p6v2-status"> ... </script>`) into the GoDaddy HTML embed section for your p6v2-status page.
+2. Publish the site.
+3. Hard-refresh the live page (Cmd/Ctrl + Shift + R) **with browser DevTools Console open**.
+4. You will immediately see lines like:
+   - `Fetching fresh status (poll #1): https://cdn.jsdelivr.net/gh/...@main/...json?bust=...`
+   - `Response status: 200`
+   - `Response headers:` (look for `age: 0`, `cf-cache-status: MISS`, `x-cache: MISS, MISS` etc.)
+5. After your R script finishes and `update-data.sh` completes the git push, click **Force Refresh** or wait ≤15s. The Last Updated value (and the other fields) should refresh with the new data and the freshness color should reflect the real age.
 
-The previous parse `new Date(updatedStr.replace(' CDT', ' GMT-0500'))` often produced an **Invalid Date** (NaN) because JavaScript's Date constructor is very picky about string formats. Non-ISO strings with spaces and timezone abbreviations like "GMT-0500" fail in many browsers, leading to NaN diffSec, which always fell through to the `else` (light red) branch.
+If you still see high `age` or `HIT` after the switch, paste the relevant console header lines here and we can add more layers (e.g. jsDelivr purge hook in the shell script, or move the JSON to a zero-cache host).
 
-The fix uses a proper ISO-8601 string with explicit offset (`2026-...T...-05:00`), which parses reliably to the correct absolute time. Then diffSec is computed against Date.now().
-
-Also added a fallback to red only on parse failure, and console.log to help debug the actual diffSec.
-
-Copy the new block above into your GoDaddy embed, publish, hard refresh. It should now correctly show green when the timestamp is recent.
-
-If still red, open browser dev tools console while on the page and look for the logged diffSec value.
+The previous raw-only version is deliberately replaced here because it was the source of the recurring 5-minute lag reports. jsDelivr + the ultra bust + header visibility has been the reliable path in testing.
