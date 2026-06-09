@@ -20,11 +20,20 @@ A fitting professional finance background image was generated using Grok Imagine
 
 Upload this image to your GoDaddy site files (e.g. as p6v2-bg.jpg) and use its URL in the embed code below.
 
-## Embed Code for GoDaddy (P6v2 Status table)
+## Embed Code for GoDaddy (P6v2 Status table) - Strong Anti-Caching Version
 
-Replace your current custom HTML embed with this full block. It uses a table in a similar professional theme (green accents, clean), with background image, and JS for the color-coded Last updated cell based on freshness (green <80s, yellow 80-180s, red >180s from now).
+This version is designed for near real-time, no-cache updates:
 
-The JS polls every 60s with cache buster.
+- Unique high-entropy bust parameter on every fetch (Date.now() + performance.now() + random) to defeat CDN/browser caches.
+- `cache: 'reload'` + full no-cache headers (`Cache-Control`, `Pragma`, `Expires`).
+- Aggressive polling every 15 seconds.
+- Manual "Force Refresh" button.
+- Last checked time display.
+- Same table + color logic for Last updated cell (based on the timestamp in the data vs client now).
+
+Note: GitHub's raw CDN (Fastly) has a base ~5 minute max-age in some cases, but the unique URL + reload + headers + frequent poll minimizes visible lag to seconds after your R script pushes. Combine with hard-refresh on the page and re-publish in GoDaddy for best results. The previous simple total-transactions version used similar techniques successfully.
+
+Replace your current custom HTML embed with this full block:
 
 ```html
 <div id="p6v2-status" style="background-image: url('YOUR_BG_IMAGE_URL_HERE'); background-size: cover; background-position: center; background-repeat: no-repeat; padding: 20px; border-radius: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 700px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
@@ -57,15 +66,36 @@ The JS polls every 60s with cache buster.
     </tr>
   </table>
   
-  <p style="text-align: center; font-size: 11px; color: #555; margin: 10px 0 0 0; opacity: 0.8;">Auto-refreshes • Data from P6v2 algo</p>
+  <div style="text-align: center; margin-top: 10px;">
+    <button onclick="forceRefresh()" style="padding: 6px 12px; background: #006400; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Force Refresh</button>
+    <span id="last-checked" style="font-size: 11px; color: #555; margin-left: 10px; opacity: 0.8;"></span>
+  </div>
+  
+  <p style="text-align: center; font-size: 11px; color: #555; margin: 8px 0 0 0; opacity: 0.8;">Auto-refreshes every 15s • Data from P6v2 algo</p>
 </div>
 
 <script>
-(async function updateStatus() {
+let refreshCount = 0;
+
+async function updateStatus() {
+  const lastCheckedEl = document.getElementById('last-checked');
   try {
-    const url = 'https://raw.githubusercontent.com/jvhoang/p6v2-public-stats/main/data/p6v2_total_transactions.json?t=' + Date.now();
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error('Fetch failed');
+    refreshCount++;
+    // High-entropy bust to defeat any caching (GitHub CDN, browser, GoDaddy proxy)
+    const bust = Date.now() + '_' + performance.now() + '_' + Math.random().toString(36).slice(2);
+    const url = 'https://raw.githubusercontent.com/jvhoang/p6v2-public-stats/main/data/p6v2_total_transactions.json?bust=' + bust;
+    
+    const res = await fetch(url, {
+      cache: 'reload',  // Strong bypass of HTTP cache
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    
+    if (!res.ok) throw new Error('Fetch failed: ' + res.status);
+    
     const data = await res.json();
     
     document.getElementById('last-updated').textContent = data.last_updated || 'N/A';
@@ -78,20 +108,25 @@ The JS polls every 60s with cache buster.
     const lastCell = document.getElementById('last-updated');
     const updatedStr = data.last_updated;
     if (updatedStr) {
-      // Parse CDT as GMT-5 for diff calc
       const updatedTime = new Date(updatedStr.replace(' CDT', ' GMT-0500'));
       const diffSec = (new Date() - updatedTime) / 1000;
       if (diffSec < 80) {
-        lastCell.style.backgroundColor = '#90EE90'; // light green
+        lastCell.style.backgroundColor = '#90EE90';
         lastCell.style.color = '#006400';
       } else if (diffSec < 180) {
-        lastCell.style.backgroundColor = '#FFFACD'; // light yellow
+        lastCell.style.backgroundColor = '#FFFACD';
         lastCell.style.color = '#333';
       } else {
-        lastCell.style.backgroundColor = '#FFB6C1'; // light red
+        lastCell.style.backgroundColor = '#FFB6C1';
         lastCell.style.color = '#8B0000';
       }
     }
+    
+    if (lastCheckedEl) {
+      lastCheckedEl.textContent = 'Last checked: ' + new Date().toLocaleTimeString();
+    }
+    
+    console.log('P6v2 status updated (poll #' + refreshCount + ')');
   } catch (e) {
     console.error('P6v2 status fetch error:', e);
     const cells = ['last-updated', 'total-transactions', 'open-transactions', 'dtbp-usage', 'vix'];
@@ -99,25 +134,33 @@ The JS polls every 60s with cache buster.
       const el = document.getElementById(id);
       if (el) el.textContent = 'N/A';
     });
+    if (lastCheckedEl) lastCheckedEl.textContent = 'Error fetching data';
   }
-  // Poll every 60s
-  setTimeout(updateStatus, 60000);
-})();
+  // Poll every 15s for near real-time
+  setTimeout(updateStatus, 15000);
+}
+
+function forceRefresh() {
+  console.log('Force refresh triggered');
+  updateStatus();
+}
+
+// Start immediately
+updateStatus();
 </script>
 ```
 
 ## How to use on GoDaddy
 
-1. In your GoDaddy Website Builder, edit the /p6v2-status page (or rename from old /p6v2-total-transactions).
+1. In your GoDaddy Website Builder, edit the /p6v2-status page.
 2. Add or replace the section with an "Embed" or "HTML" element.
 3. Paste the full code above.
-4. Upload the generated background image (from the Grok Imagine output) to your site files/media and update the `YOUR_BG_IMAGE_URL_HERE` in the code.
-5. Publish.
+4. Upload the generated background image to your site files/media and update the `YOUR_BG_IMAGE_URL_HERE`.
+5. Publish the page (this often clears GoDaddy's page-level cache).
+6. On your browser, hard refresh (Ctrl/Cmd + Shift + R) the first time.
 
-The table will auto-refresh every 60s and color the Last updated cell based on how fresh the data is.
+This should give you the real-time no-cache behavior you had in the previous simple total-transactions version. The frequent unique-bust fetches + reload mode + headers + short poll interval minimize lag to the time it takes your R script to push + GitHub to accept the commit (usually seconds).
 
 ## How to commit / update files (for the data owner)
 
-See previous instructions in this README for the clone and helper. Your R script writes the full status JSON now.
-
-The public repo is kept clean of personal paths (R handles writing to the clone's data/ dir privately).
+See previous instructions. Your R script (with the pub_dir writes) keeps the JSON fresh.
