@@ -32,15 +32,14 @@ fi
 MSG="Update total transactions $(date '+%Y-%m-%d %H:%M:%S')"
 git commit -m "$MSG"
 
-# Write version pointer (current SHA + UTC time) and amend the commit so the pointer
-# travels with the data. The JS will use this SHA to pin jsDelivr fetches to the
-# exact commit that contains the fresh JSON, bypassing sticky @main CDN caches.
-SHA=$(git rev-parse HEAD)
-echo "$SHA $(date -u +%Y-%m-%dT%H:%M:%SZ)" > data/p6v2_version.txt
+# Write version pointer pointing to *this* data commit SHA (the tree that has the fresh JSON).
+# Use a follow-up commit for the pointer so the SHA we record is stable and correct.
+DATA_SHA=$(git rev-parse HEAD)
+echo "$DATA_SHA $(date -u +%Y-%m-%dT%H:%M:%SZ)" > data/p6v2_version.txt
 git add data/p6v2_version.txt
-git commit --amend --no-edit
+git commit -m "P6v2 version pointer for $DATA_SHA"
 
-echo "Commit created (with version pointer). Preparing push..."
+echo "Data commit + version pointer created. Preparing push..."
 
 # Save original remote
 ORIG_REMOTE=$(git config --get remote.origin.url)
